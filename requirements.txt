@@ -2,3 +2,8 @@ Django>=5.0
 asgiref
 sqlparse
 tzdata
+gunicorn
+whitenoise[brotli]
+dj-database-url
+psycopg2-binary
+python-dotenv
