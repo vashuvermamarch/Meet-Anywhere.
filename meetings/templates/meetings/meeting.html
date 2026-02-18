@@ -51,27 +51,76 @@
 
     <script>
         const domain = 'meet.jit.si';
+        const isHost = {{ is_host| yesno: "true,false" }};
+
         const options = {
             roomName: '{{ room_name }}',
             width: '100%',
             height: '100%',
             parentNode: document.querySelector('#meet'),
             userInfo: {
-                displayName: 'Guest'
+                displayName: isHost ? 'Host' : 'Participant'
+            },
+            configOverwrite: {
+                prejoinPageEnabled: false,
+                // If not host, disable some moderation tools
+                disableRemoteMute: !isHost,
+                remoteVideoMenu: {
+                    disableKick: !isHost
+                },
+                // Automatic lobby for security
+                lobby: {
+                    enabled: true // Everyone waits in the lobby by default
+                }
             },
             interfaceConfigOverwrite: {
-                // You can customize the UI here
                 TOOLBAR_BUTTONS: [
-                    'microphone', 'camera', 'closedcaptions', 'desktop', 'embedmeeting', 'fullscreen',
-                    'fodeviceselection', 'hangup', 'profile', 'chat', 'recording',
-                    'livestreaming', 'etherpad', 'sharedvideo', 'settings', 'raisehand',
-                    'videoquality', 'filmstrip', 'invite', 'feedback', 'stats', 'shortcuts',
-                    'tileview', 'videobackgroundblur', 'download', 'help', 'mute-everyone',
-                    'security'
+                    'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
+                    'fodeviceselection', 'hangup', 'profile', 'chat', 'settings', 'raisehand',
+                    'videoquality', 'filmstrip', 'tileview', 'videobackgroundblur', 'help',
+                    // Only show moderator buttons to host
+                    ...(isHost ? ['mute-everyone', 'security', 'kick-out'] : [])
                 ],
             }
         };
+
         const api = new JitsiMeetExternalAPI(domain, options);
+
+        // --- FIREWALL & MODERATION LOGIC ---
+
+        api.addEventListener('videoConferenceJoined', () => {
+            console.log('Joined as', isHost ? 'Host' : 'Participant');
+
+            // If Host, automatically enable Lobby to act as a firewall
+            if (isHost) {
+                api.executeCommand('toggleLobby', true);
+            }
+        });
+
+        // End meeting for everyone if Host leaves
+        if (isHost) {
+            api.addEventListener('videoConferenceLeft', () => {
+                // In a production app, you would send a signal to your backend
+                // or use Jitsi's secure domain to end the conference.
+                // On public meet.jit.si, we redirect the host away.
+                window.location.href = "{% url 'index' %}?msg=MeetingEndedByHost";
+            });
+
+            // Monitor when someone tries to join (Lobby)
+            api.addEventListener('lobbyParticipantJoined', (participant) => {
+                console.log('Participant waiting in lobby:', participant.displayName);
+                // Host can accept via the UI notification
+            });
+        } else {
+            // Logic for participants: If host is gone, notify them
+            api.addEventListener('participantLeft', (data) => {
+                // If the only person left is a participant, or if we detect host left
+                // Note: Jitsi public doesn't easily expose "isHost" of others
+            });
+
+            // Prevent participants from being moderators if they join first
+            // (Note: This is limited on public Jitsi, but we hide UI)
+        }
     </script>
 </body>
 

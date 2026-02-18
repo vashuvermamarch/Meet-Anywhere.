@@ -83,9 +83,16 @@ WSGI_APPLICATION = 'meets_platform.wsgi.application'
 DATABASES = {
     'default': dj_database_url.config(
         default=f'sqlite:///{BASE_DIR / "db.sqlite3"}',
-        conn_max_age=600
+        conn_max_age=600,
+        conn_health_checks=True,
     )
 }
+
+# Add SSL requirement for Neon/Render databases if using PostgreSQL
+if DATABASES['default'].get('ENGINE') == 'django.db.backends.postgresql':
+    DATABASES['default']['OPTIONS'] = {
+        'sslmode': 'require',
+    }
 
 
 # Password validation
