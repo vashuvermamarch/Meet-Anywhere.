@@ -6,7 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Meeting: {{ room_name }} | Meets Platform</title>
     <script src='https://meet.jit.si/external_api.js'></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --primary: #4f46e5;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+        }
+
         body,
         html {
             margin: 0;
@@ -14,13 +23,139 @@
             height: 100%;
             width: 100%;
             overflow: hidden;
-            background-color: #0f172a;
+            background-color: var(--bg);
             font-family: 'Outfit', sans-serif;
+            color: white;
         }
 
         #meet {
             height: 100vh;
             width: 100vw;
+            display: none;
+        }
+
+        /* --- GATEKEEPER SCREENS --- */
+        .gatekeeper-screen {
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            background: radial-gradient(circle at top right, #1e293b, #0f172a);
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 2.5rem;
+            border-radius: 20px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            width: 90%;
+            max-width: 450px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 16px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(0, 0, 0, 0.2);
+            color: white;
+            font-size: 1rem;
+            margin: 1.5rem 0;
+            box-sizing: border-box;
+            outline: none;
+        }
+
+        .btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .loader {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid var(--primary);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* --- MODERATOR PANEL --- */
+        #mod-panel {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            width: 300px;
+            background: var(--card-bg);
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: none;
+            flex-direction: column;
+            max-height: 80vh;
+        }
+
+        .mod-header {
+            padding: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .request-list {
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .request-item {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 0.8rem;
+            flex: 1;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            color: white;
+        }
+
+        .btn-success {
+            background: var(--success);
+        }
+
+        .btn-danger {
+            background: var(--danger);
         }
 
         .back-btn {
@@ -35,91 +170,167 @@
             border-radius: 8px;
             text-decoration: none;
             font-size: 14px;
-            backdrop-filter: blur(4px);
-            transition: all 0.2s;
         }
 
-        .back-btn:hover {
-            background: #4f46e5;
+        .status-badge {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.8rem;
+            z-index: 1000;
         }
     </style>
 </head>
 
 <body>
-    <a href="{% url 'index' %}" class="back-btn">← Back to Dashboard</a>
+    <a href="{% url 'index' %}" class="back-btn">← Dashboard</a>
+
+    <div class="status-badge">Role: {% if is_host %}HOST{% else %}GUEST{% endif %}</div>
+
+    <!-- HOST MODERATOR PANEL -->
+    <div id="mod-panel">
+        <div class="mod-header">
+            <span>🛡️ Approval Panel</span>
+            <span id="req-count"
+                style="background: var(--primary); padding: 2px 8px; border-radius: 10px; font-size: 0.8rem;">0</span>
+        </div>
+        <div class="request-list" id="request-list">
+            <p id="no-requests" style="text-align: center; color: #94a3b8; font-size: 0.9rem; margin: 20px 0;">No
+                pending requests</p>
+        </div>
+    </div>
+
+    <!-- GUEST SECTIONS -->
+    <div class="gatekeeper-screen" id="screen-name" style="display: none;">
+        <div class="card">
+            <h1>Join Meeting</h1>
+            <input type="text" id="guest-name" placeholder="Enter your name..." maxlength="50">
+            <button class="btn" onclick="submitJoinRequest()">Request to Join</button>
+        </div>
+    </div>
+
+    <div class="gatekeeper-screen" id="screen-waiting" style="display: none;">
+        <div class="card">
+            <div class="loader"></div>
+            <h1>Waiting for Approval</h1>
+            <p id="wait-status">The host will review your request shortly.</p>
+        </div>
+    </div>
+
+    <!-- JITSI CONTAINER -->
     <div id="meet"></div>
 
     <script>
-        const domain = 'meet.jit.si';
-        const isHost = {{ is_host| yesno: "true,false" }};
+        const isHost = {% if is_host %}true{% else %} false{% endif %};
+        let isApproved = {% if is_approved %}true{% else %} false{% endif %};
+        const roomName = '{{ room_name }}';
+        let requestId = null;
 
-        const options = {
-            roomName: '{{ room_name }}',
-            width: '100%',
-            height: '100%',
-            parentNode: document.querySelector('#meet'),
-            userInfo: {
-                displayName: isHost ? 'Host' : 'Participant'
-            },
-            configOverwrite: {
-                prejoinPageEnabled: false,
-                // If not host, disable some moderation tools
-                disableRemoteMute: !isHost,
-                remoteVideoMenu: {
-                    disableKick: !isHost
-                },
-                // Automatic lobby for security
-                lobby: {
-                    enabled: true // Everyone waits in the lobby by default
-                }
-            },
-            interfaceConfigOverwrite: {
-                TOOLBAR_BUTTONS: [
-                    'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
-                    'fodeviceselection', 'hangup', 'profile', 'chat', 'settings', 'raisehand',
-                    'videoquality', 'filmstrip', 'tileview', 'videobackgroundblur', 'help',
-                    // Only show moderator buttons to host
-                    ...(isHost ? ['mute-everyone', 'security', 'kick-out'] : [])
-                ],
-            }
-        };
-
-        const api = new JitsiMeetExternalAPI(domain, options);
-
-        // --- FIREWALL & MODERATION LOGIC ---
-
-        api.addEventListener('videoConferenceJoined', () => {
-            console.log('Joined as', isHost ? 'Host' : 'Participant');
-
-            // If Host, automatically enable Lobby to act as a firewall
+        document.addEventListener('DOMContentLoaded', () => {
             if (isHost) {
-                api.executeCommand('toggleLobby', true);
+                document.getElementById('mod-panel').style.display = 'flex';
+                loadJitsi();
+                setInterval(pollJoinRequests, 3000);
+            } else if (isApproved) {
+                loadJitsi();
+            } else {
+                document.getElementById('screen-name').style.display = 'flex';
             }
         });
 
-        // End meeting for everyone if Host leaves
-        if (isHost) {
-            api.addEventListener('videoConferenceLeft', () => {
-                // In a production app, you would send a signal to your backend
-                // or use Jitsi's secure domain to end the conference.
-                // On public meet.jit.si, we redirect the host away.
-                window.location.href = "{% url 'index' %}?msg=MeetingEndedByHost";
-            });
+        async function pollJoinRequests() {
+            try {
+                const response = await fetch(`/api/meet/${roomName}/requests/`);
+                const data = await response.json();
+                const list = document.getElementById('request-list');
+                const noReqs = document.getElementById('no-requests');
 
-            // Monitor when someone tries to join (Lobby)
-            api.addEventListener('lobbyParticipantJoined', (participant) => {
-                console.log('Participant waiting in lobby:', participant.displayName);
-                // Host can accept via the UI notification
-            });
-        } else {
-            // Logic for participants: If host is gone, notify them
-            api.addEventListener('participantLeft', (data) => {
-                // If the only person left is a participant, or if we detect host left
-                // Note: Jitsi public doesn't easily expose "isHost" of others
-            });
+                document.getElementById('req-count').innerText = data.requests.length;
+                list.querySelectorAll('.request-item').forEach(el => el.remove());
 
-            // Prevent participants from being moderators if they join first
-            // (Note: This is limited on public Jitsi, but we hide UI)
+                if (data.requests.length === 0) noReqs.style.display = 'block';
+                else {
+                    noReqs.style.display = 'none';
+                    data.requests.forEach(req => {
+                        const item = document.createElement('div');
+                        item.className = 'request-item';
+                        item.innerHTML = `
+                            <div style="font-weight: 600;">${req.guest_name} knocks...</div>
+                            <div style="display: flex; gap: 10px;">
+                                <button class="btn-small btn-success" onclick="handleRequest(${req.id}, 'APPROVED')">Allow</button>
+                                <button class="btn-small btn-danger" onclick="handleRequest(${req.id}, 'REJECTED')">Deny</button>
+                            </div>
+                        `;
+                        list.appendChild(item);
+                    });
+                }
+            } catch (e) { }
+        }
+
+        async function handleRequest(id, action) {
+            await fetch(`/api/request/${id}/approve/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: action })
+            });
+            pollJoinRequests();
+        }
+
+        async function submitJoinRequest() {
+            const name = document.getElementById('guest-name').value.trim();
+            if (!name) return alert('Name required');
+            document.getElementById('screen-name').style.display = 'none';
+            document.getElementById('screen-waiting').style.display = 'flex';
+            const response = await fetch(`/api/meet/${roomName}/request/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name })
+            });
+            const data = await response.json();
+            requestId = data.request_id;
+            startStatusPolling();
+        }
+
+        function startStatusPolling() {
+            const poll = setInterval(async () => {
+                const response = await fetch(`/api/request/${requestId}/status/`);
+                const data = await response.json();
+                if (data.status === 'APPROVED') { clearInterval(poll); loadJitsi(); }
+                else if (data.status === 'REJECTED') { clearInterval(poll); document.getElementById('wait-status').innerText = 'Access Denied.'; }
+            }, 3000);
+        }
+
+        function loadJitsi() {
+            // Hide all screens
+            document.getElementById('screen-name').style.display = 'none';
+            document.getElementById('screen-waiting').style.display = 'none';
+            document.getElementById('meet').style.display = 'block';
+
+            // Using jitsi.riot.im as it's more stable for anonymous room creation
+            const domain = 'jitsi.riot.im';
+            const options = {
+                roomName: roomName,
+                width: '100%',
+                height: '100%',
+                parentNode: document.querySelector('#meet'),
+                userInfo: { displayName: isHost ? 'Host (Moderator)' : 'Participant' },
+                configOverwrite: {
+                    prejoinPageEnabled: false,
+                    // FORCE LOBBY OFF in Jitsi. Our Django app handles the lobby.
+                    lobby: { enabled: false },
+                    disableModeratorIndicator: false,
+                },
+                interfaceConfigOverwrite: {
+                    TOOLBAR_BUTTONS: ['microphone', 'camera', 'desktop', 'hangup', 'chat', 'settings', 'tileview']
+                }
+            };
+            const api = new JitsiMeetExternalAPI(domain, options);
+            if (isHost) {
+                api.addEventListener('videoConferenceLeft', () => { window.location.href = "{% url 'end_meeting' room_name %}"; });
+            }
         }
     </script>
 </body>
