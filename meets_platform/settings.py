@@ -143,7 +143,16 @@ STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
+# Authentication Settings
+LOGIN_URL = 'login'
+LOGIN_REDIRECT_URL = 'index'
+LOGOUT_REDIRECT_URL = 'index'
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
-
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Jitsi Configuration (Production JWT Spec)
+JITSI_DOMAIN = os.environ.get('JITSI_DOMAIN', 'meet.yourdomain.com').strip()
+JITSI_APP_ID = os.environ.get('JITSI_APP_ID', 'my_django_app')
+JITSI_APP_SECRET = os.environ.get('JITSI_APP_SECRET', 'CHANGE_ME_STRONG_SECRET')

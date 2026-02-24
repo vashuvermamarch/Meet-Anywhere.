@@ -1,0 +1,56 @@
+version: '3'
+
+services:
+    # Jitsi Web
+    web:
+        image: jitsi/web:latest
+        restart: unless-stopped
+        ports:
+            - "8080:80"
+            - "8443:443"
+        volumes:
+            - ./jitsi-config/web:/config
+        environment:
+            - PUBLIC_URL=http://localhost:8080
+            - ENABLE_AUTH=1
+            - ENABLE_GUESTS=1
+            - AUTH_TYPE=jwt
+            - JWT_APP_ID=my_django_app
+            - JWT_APP_SECRET=62HfvFanpSC2OCCFIGV28YurmPRLP8_d51OlOWcrk5Q
+            - JWT_ACCEPTED_ISSUERS=my_django_app
+            - JWT_ACCEPTED_AUDIENCES=jitsi
+        networks:
+            - jitsi
+
+    # Jicofo (Conference Focus)
+    jicofo:
+        image: jitsi/jicofo:latest
+        restart: unless-stopped
+        volumes:
+            - ./jitsi-config/jicofo:/config
+        environment:
+            - ENABLE_AUTH=1
+            - AUTH_TYPE=jwt
+            - JWT_APP_ID=my_django_app
+            - JWT_APP_SECRET=62HfvFanpSC2OCCFIGV28YurmPRLP8_d51OlOWcrk5Q
+        depends_on:
+            - prosody
+        networks:
+            - jitsi
+
+    # Prosody (XMPP Server)
+    prosody:
+        image: jitsi/prosody:latest
+        restart: unless-stopped
+        volumes:
+            - ./jitsi-config/prosody:/config
+        environment:
+            - ENABLE_AUTH=1
+            - AUTH_TYPE=jwt
+            - JWT_APP_ID=my_django_app
+            - JWT_APP_SECRET=62HfvFanpSC2OCCFIGV28YurmPRLP8_d51OlOWcrk5Q
+        networks:
+            - jitsi
+            
+networks:
+    jitsi:

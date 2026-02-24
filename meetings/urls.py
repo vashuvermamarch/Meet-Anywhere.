@@ -3,12 +3,12 @@ from . import views
 
 urlpatterns = [
     path('', views.index, name='index'),
+    path('signup/', views.signup, name='signup'),
+    path('create/', views.create_meeting, name='create_meeting'),
     path('meet/<str:room_name>/', views.meeting, name='meeting'),
+    path('meet/<str:room_name>/waiting/', views.waiting_room, name='waiting_room'),
+    path('meet/<str:room_name>/status/', views.check_request_status, name='check_status'),
+    path('meet/<str:room_name>/manage/', views.manage_requests, name='manage_requests'),
+    path('meet/<str:room_name>/respond/', views.respond_to_request, name='respond_request'),
     path('meet/<str:room_name>/end/', views.end_meeting, name='end_meeting'),
-    
-    # Gatekeeper API
-    path('api/meet/<str:room_name>/request/', views.api_request_join, name='api_request_join'),
-    path('api/request/<int:request_id>/status/', views.api_check_status, name='api_check_status'),
-    path('api/meet/<str:room_name>/requests/', views.api_get_requests, name='api_get_requests'),
-    path('api/request/<int:request_id>/approve/', views.api_approve_request, name='api_approve_request'),
 ]

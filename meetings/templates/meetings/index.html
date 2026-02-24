@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meets Platform | Connect Anywhere</title>
+    <title>Meets Platform | Production Secure</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -40,27 +41,32 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 3rem;
+            gap: 2rem;
             z-index: 10;
         }
 
-        .hero {
-            text-align: center;
+        .user-nav {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            background: var(--glass);
+            padding: 8px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(10px);
         }
 
         h1 {
-            font-size: 4rem;
+            font-size: 3.5rem;
             font-weight: 700;
             margin-bottom: 1rem;
             background: linear-gradient(to right, #818cf8, #c084fc);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-        }
-
-        p.subtitle {
-            font-size: 1.25rem;
-            color: var(--text-dim);
-            max-width: 600px;
+            text-align: center;
         }
 
         .options {
@@ -78,25 +84,6 @@
             text-align: center;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             backdrop-filter: blur(12px);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .card:hover {
-            transform: translateY(-10px);
-            border-color: var(--primary);
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
-        }
-
-        .card h2 {
-            font-size: 1.75rem;
-            margin-bottom: 1rem;
-        }
-
-        .card p {
-            color: var(--text-dim);
-            margin-bottom: 2rem;
-            line-height: 1.6;
         }
 
         .btn {
@@ -110,26 +97,18 @@
             border: none;
             width: 100%;
             font-size: 1rem;
+            text-align: center;
         }
 
         .btn-primary {
-            background-color: var(--primary);
+            background: var(--primary);
             color: white;
-        }
-
-        .btn-primary:hover {
-            background-color: var(--primary-dark);
         }
 
         .btn-outline {
-            background-color: transparent;
+            background: transparent;
             border: 2px solid var(--primary);
             color: var(--primary);
-        }
-
-        .btn-outline:hover {
-            background-color: var(--primary);
-            color: white;
         }
 
         input {
@@ -140,62 +119,62 @@
             background: rgba(15, 23, 42, 0.5);
             color: white;
             margin-bottom: 1rem;
-            font-family: inherit;
-        }
-
-        input:focus {
             outline: none;
-            border-color: var(--primary);
         }
 
-        /* Abstract blobs */
-        .blob {
-            position: absolute;
-            width: 500px;
-            height: 500px;
-            background: radial-gradient(circle, var(--primary) 0%, transparent 70%);
-            filter: blur(80px);
-            opacity: 0.15;
-            z-index: 0;
-            pointer-events: none;
+        .alert {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+            padding: 1rem;
+            border-radius: 12px;
+            width: 100%;
+            text-align: center;
         }
-
-        .blob-1 { top: -250px; left: -250px; }
-        .blob-2 { bottom: -250px; right: -250px; }
     </style>
 </head>
+
 <body>
-    <div class="blob blob-1"></div>
-    <div class="blob blob-2"></div>
+    <div class="user-nav">
+        <span>Logged in as <b>{{ user.username }}</b></span>
+        <a href="{% url 'logout' %}"
+            style="margin-left: 15px; color: #fca5a5; text-decoration: none; font-size: 0.9rem;">Logout</a>
+    </div>
 
     <div class="container">
-        <div class="hero">
-            <h1>Meet Anywhere.</h1>
-            <p class="subtitle">Secure, high-quality video meetings for everyone. Completely free and built on open standards.</p>
-        </div>
+        <h1>Production Jitsi</h1>
+
+        {% if error %}
+        <div class="alert" style="margin-bottom: 1rem;">{{ error }}</div>
+        {% endif %}
+
+        {% if msg == "MeetingEnded" %}
+        <div class="alert">The meeting was ended by the host.</div>
+        {% endif %}
 
         <div class="options">
             <div class="card">
-                <h2>Host a Meet</h2>
-                <p>Start a new meeting instantly. Share the link with others to invite them.</p>
-                <form method="POST">
+                <h2>Host a Meeting</h2>
+                <p style="color: var(--text-dim); margin-bottom: 2rem;">Start a new secure meeting instantly as a
+                    moderator.</p>
+                <form action="{% url 'create_meeting' %}" method="POST">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="host">
-                    <button type="submit" class="btn btn-primary">Start Meeting</button>
+                    <input type="text" name="room_name" placeholder="Custom Name (optional)">
+                    <button type="submit" class="btn btn-primary">Create Secure Room</button>
                 </form>
             </div>
 
             <div class="card">
-                <h2>Join a Meet</h2>
-                <p>Have a meeting ID or room name? Enter it below to join the conversation.</p>
-                <form method="POST">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="join">
-                    <input type="text" name="room_name" placeholder="Enter Room Name" required>
-                    <button type="submit" class="btn btn-outline">Join Meeting</button>
+                <h2>Join a Meeting</h2>
+                <p style="color: var(--text-dim); margin-bottom: 2rem;">Enter a room name to join an existing session.
+                </p>
+                <form method="GET" onsubmit="this.action='/meet/'+this.room.value+'/';">
+                    <input type="text" name="room" placeholder="Enter Room Name" required>
+                    <button type="submit" class="btn btn-outline">Join Protected Session</button>
                 </form>
             </div>
         </div>
     </div>
 </body>
+
 </html>

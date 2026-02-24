@@ -1,131 +1,184 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseForbidden
+from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 import uuid
 import json
-from .models import MeetingRoom, JoinRequest
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth import login
+import os
+from .models import Meeting, JoinRequest
+from .utils import generate_jitsi_jwt
 
+def signup(request):
+    """
+    User registration view.
+    """
+    if request.method == 'POST':
+        form = UserCreationForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            login(request, user)
+            return redirect('index')
+    else:
+        form = UserCreationForm()
+    return render(request, 'registration/signup.html', {'form': form})
+
+@login_required
 def index(request):
     """
-    Landing page with options to Host or Join a meeting.
+    Landing page for authenticated users.
     """
     msg = request.GET.get('msg')
-    
-    if request.method == 'POST':
-        action = request.POST.get('action')
-        room_name = request.POST.get('room_name')
-        
-        if action == 'host':
-            # Generate a random room name for hosting
-            new_room = str(uuid.uuid4())[:8]
-            
-            # Create/Update MeetingRoom record
-            MeetingRoom.objects.update_or_create(
-                room_name=new_room,
-                defaults={'is_host_active': True}
-            )
-            
-            # Store in session that this user is the host
-            request.session['hosting_' + new_room] = True
-            request.session.save()
-            
-            target_url = reverse('meeting', kwargs={'room_name': new_room})
-            return redirect(f"{target_url}?role=host")
-        
-        elif action == 'join' and room_name:
-            return redirect('meeting', room_name=room_name)
-            
     return render(request, 'meetings/index.html', {'msg': msg})
 
+@login_required
+def create_meeting(request):
+    """
+    Host-only meeting creation with duplicate handling.
+    """
+    if request.method == 'POST':
+        room_name = request.POST.get('room_name')
+        if not room_name:
+            room_name = str(uuid.uuid4())[:8]
+        
+        # Check if room already exists
+        existing_meeting = Meeting.objects.filter(room_name=room_name).first()
+        
+        if existing_meeting:
+            if existing_meeting.host == request.user:
+                # User already owns this room, just ensure it's active
+                existing_meeting.is_active = True
+                existing_meeting.save()
+                return redirect('meeting', room_name=room_name)
+            else:
+                # Room taken by someone else
+                return render(request, 'meetings/index.html', {
+                    'msg': 'RoomNameTaken',
+                    'error': f'The room name "{room_name}" is already taken by another host. Please choose a different name.'
+                })
+        
+        # Create new meeting
+        meeting = Meeting.objects.create(
+            room_name=room_name,
+            host=request.user,
+            is_public=True  # Ensure participants can join by default
+        )
+        return redirect('meeting', room_name=meeting.room_name)
+    
+    return redirect('index')
+
+@login_required
 def meeting(request, room_name):
     """
-    Meeting room page where Gatekeeper or Jitsi is shown.
+    Production-quality Jitsi join view.
+    Ensures roles are strictly detected and authorized before joining.
     """
-    is_host = request.session.get('hosting_' + room_name, False) or request.GET.get('role') == 'host'
-    room, created = MeetingRoom.objects.get_or_create(room_name=room_name)
+    meeting = get_object_or_404(Meeting, room_name=room_name, is_active=True)
     
-    # If Host, ensure room is active
-    if is_host:
-        room.is_host_active = True
-        room.save()
-        # Ensure session is set if they joined via URL param
-        request.session['hosting_' + room_name] = True
-        request.session.save()
+    # Permission logic
+    is_host = (meeting.host == request.user)
+    is_authorized = meeting.is_public or is_host or meeting.authorized_participants.filter(id=request.user.id).exists()
+    
+    if not is_authorized:
+        return HttpResponseForbidden("You are not authorized to join this meeting.")
 
-    # If Guest, check if they have an approved request in this session
-    approved_request_id = request.session.get('approved_request_' + room_name)
-    is_approved = False
-    if approved_request_id:
-        try:
-            join_req = JoinRequest.objects.get(id=approved_request_id, room=room, status='APPROVED')
-            is_approved = True
-        except JoinRequest.DoesNotExist:
-            pass
+    # ✅ CUSTOM APPROVAL GATE
+    if not is_host:
+        join_request = JoinRequest.objects.filter(meeting=meeting, user=request.user).first()
+        if not join_request or join_request.status != 'APPROVED':
+            return redirect('waiting_room', room_name=room_name)
+
+    from django.conf import settings
+    # Ensure domain handling is consistent with JWT logic
+    jitsi_domain = getattr(settings, 'JITSI_DOMAIN', 'meet.jit.si')
+
+    from django.utils.text import slugify
+    normalized_room = slugify(room_name).lower()
+
+    # Generate JWT using helper with explicit is_host role
+    jwt_token = generate_jitsi_jwt(request.user, normalized_room, is_host=is_host)
 
     return render(request, 'meetings/meeting.html', {
         'room_name': room_name,
+        'room_name_slug': normalized_room,
+        'jitsi_domain': jitsi_domain,
+        'jwt_token': jwt_token,
         'is_host': is_host,
-        'is_approved': is_approved,
-        'is_room_active': room.is_host_active
+        'username': request.user.username,
     })
 
-# --- GATEKEEPER API ENDPOINTS ---
-
-@csrf_exempt
-def api_request_join(request, room_name):
-    """Guest submits a request to join."""
-    if request.method == 'POST':
-        data = json.loads(request.body)
-        guest_name = data.get('name', 'Anonymous')
-        room = get_object_or_404(MeetingRoom, room_name=room_name)
-        
-        join_req = JoinRequest.objects.create(room=room, guest_name=guest_name)
-        return JsonResponse({'request_id': join_req.id, 'status': join_req.status})
-    return JsonResponse({'error': 'Invalid method'}, status=400)
-
-def api_check_status(request, request_id):
-    """Guest polls for approval status."""
-    join_req = get_object_or_404(JoinRequest, id=request_id)
-    
-    if join_req.status == 'APPROVED':
-        # Store in session so they don't have to knock again if they refresh
-        request.session['approved_request_' + join_req.room.room_name] = join_req.id
-        request.session.save()
-        
-    return JsonResponse({'status': join_req.status})
-
-def api_get_requests(request, room_name):
-    """Host gets pending requests."""
-    if not request.session.get('hosting_' + room_name, False):
-        return JsonResponse({'error': 'Unauthorized'}, status=403)
-        
-    room = get_object_or_404(MeetingRoom, room_name=room_name)
-    requests = JoinRequest.objects.filter(room=room, status='PENDING').values('id', 'guest_name', 'created_at')
-    return JsonResponse({'requests': list(requests)})
-
-@csrf_exempt
-def api_approve_request(request, request_id):
-    """Host approves or rejects a request."""
-    join_req = get_object_or_404(JoinRequest, id=request_id)
-    
-    if not request.session.get('hosting_' + join_req.room.room_name, False):
-        return JsonResponse({'error': 'Unauthorized'}, status=403)
-        
-    if request.method == 'POST':
-        data = json.loads(request.body)
-        action = data.get('action') # 'APPROVED' or 'REJECTED'
-        if action in ['APPROVED', 'REJECTED']:
-            join_req.status = action
-            join_req.save()
-            return JsonResponse({'status': 'success'})
-            
-    return JsonResponse({'error': 'Invalid request'}, status=400)
-
 def end_meeting(request, room_name):
-    """Host ends the meeting, clearing active room and requests."""
-    if request.session.get('hosting_' + room_name, False):
-        MeetingRoom.objects.filter(room_name=room_name).update(is_host_active=False)
-        JoinRequest.objects.filter(room__room_name=room_name).delete()
-        request.session['hosting_' + room_name] = False
+    """
+    Host ends the meeting permanently.
+    """
+    meeting = get_object_or_404(Meeting, room_name=room_name)
+    if meeting.host == request.user:
+        meeting.is_active = False
+        meeting.save()
     return redirect(f"{reverse('index')}?msg=MeetingEnded")
+@login_required
+def waiting_room(request, room_name):
+    """
+    Participant waits here for host approval.
+    """
+    meeting = get_object_or_404(Meeting, room_name=room_name)
+    join_request, created = JoinRequest.objects.get_or_create(meeting=meeting, user=request.user)
+    
+    if join_request.status == 'APPROVED':
+        return redirect('meeting', room_name=room_name)
+        
+    return render(request, 'meetings/waiting_room.html', {
+        'room_name': room_name,
+        'status': join_request.status
+    })
+
+@login_required
+def check_request_status(request, room_name):
+    """
+    AJAX endpoint for participants to poll their status.
+    """
+    join_request = JoinRequest.objects.filter(meeting__room_name=room_name, user=request.user).first()
+    if not join_request:
+        return JsonResponse({'status': 'NONE'})
+    return JsonResponse({'status': join_request.status})
+
+@login_required
+def manage_requests(request, room_name):
+    """
+    Host view to see and manage pending requests (AJAX).
+    """
+    meeting = get_object_or_404(Meeting, room_name=room_name)
+    if meeting.host != request.user:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+        
+    pending = JoinRequest.objects.filter(meeting=meeting, status='PENDING').select_related('user')
+    data = [{'id': r.id, 'username': r.user.username} for r in pending]
+    return JsonResponse({'requests': data})
+
+@csrf_exempt
+@login_required
+def respond_to_request(request, room_name):
+    """
+    Host action to Accept or Deny (AJAX).
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Invalid method'}, status=405)
+        
+    meeting = get_object_or_404(Meeting, room_name=room_name)
+    if meeting.host != request.user:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+        
+    data = json.loads(request.body)
+    request_id = data.get('request_id')
+    new_status = data.get('status') # 'APPROVED' or 'DENIED'
+    
+    if new_status not in ['APPROVED', 'DENIED']:
+        return JsonResponse({'error': 'Invalid status'}, status=400)
+        
+    join_req = get_object_or_404(JoinRequest, id=request_id, meeting=meeting)
+    join_req.status = new_status
+    join_req.save()
+    
+    return JsonResponse({'success': True})

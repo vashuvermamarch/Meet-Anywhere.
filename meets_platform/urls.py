@@ -20,5 +20,7 @@ from django.urls import path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('accounts/', include('django.contrib.auth.urls')), # Built-in auth
+    path('login/', include('django.contrib.auth.urls')),    # Alternative path for our LOGIN_URL
     path('', include('meetings.urls')),
 ]
