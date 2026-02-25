@@ -12,6 +12,11 @@ class Meeting(models.Model):
     last_active = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
 
+    def save(self, *args, **kwargs):
+        if self.room_name:
+            self.room_name = self.room_name.lower().strip()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.room_name} (Host: {self.host.username})"
 

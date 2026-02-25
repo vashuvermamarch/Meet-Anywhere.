@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meeting: {{ room_name }}</title>
+    <title>Meeting: {{ room_name }} | Meet-Anywhere</title>
 
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
 
@@ -36,19 +36,22 @@
             position: fixed;
             top: 20px;
             left: 20px;
-            z-index: 100;
-            background: rgba(15, 23, 42, 0.8);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 9999;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.2);
             color: white;
-            padding: 8px 16px;
+            padding: 10px 20px;
             border-radius: 8px;
             text-decoration: none;
             font-size: 14px;
-            transition: background 0.2s;
+            transition: background 0.2s, transform 0.1s;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
         }
 
         .back-btn:hover {
-            background: rgba(30, 41, 59, 1);
+            background: rgba(45, 55, 72, 1);
+            transform: translateY(-1px);
         }
 
         @keyframes spin {
@@ -79,23 +82,93 @@
             animation: spin 1s linear infinite;
             margin-bottom: 20px;
         }
+        /* Modal Styles */
+        #exit-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        .modal-content {
+            background: #1e293b;
+            padding: 2.5rem;
+            border-radius: 20px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.1);
+            max-width: 400px;
+            width: 90%;
+        }
+        .modal-btn {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 1rem;
+            transition: opacity 0.2s;
+        }
+        .btn-cancel { background: #475569; color: white; }
+        .btn-leave { background: var(--primary); color: white; }
+        .btn-end { background: #ef4444; color: white; }
     </style>
 </head>
 
 <body>
-    <a href="{% url 'index' %}" class="back-btn">← Leave Meeting</a>
+    <button onclick="handleExit()" class="back-btn">← Leave Meeting</button>
     <button onclick="copyRoomName()" class="back-btn" style="left: 160px; background: var(--primary); border: none; cursor: pointer;">📋 Copy Room Name</button>
 
     {% if is_host %}
-    <div id="request-sidebar" style="position: fixed; right: 0; top: 0; width: 300px; height: 100vh; background: #1e293b; z-index: 1000; border-left: 1px solid rgba(255,255,255,0.1); padding: 20px; display: none;">
-        <h3 style="margin-top: 0; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">Joining Requests</h3>
+    <!-- ================= HOST ONLY UI ELEMENTS ================= -->
+    
+    <!-- Joining Requests Sidebar -->
+    <div id="request-sidebar" style="position: fixed; right: 0; top: 0; width: 300px; height: 100vh; background: #0f172a; z-index: 10000; border-left: 1px solid rgba(255,255,255,0.1); padding: 20px; display: none;">
+        <h3 style="margin-top: 0; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; color: white;">Joining Requests</h3>
         <div id="request-list" style="margin-top: 20px;">
             <p style="color: #94a3b8; text-align: center;">No pending requests</p>
         </div>
     </div>
-    <button id="toggle-sidebar" onclick="toggleSidebar()" style="position: fixed; bottom: 80px; right: 20px; z-index: 1001; background: var(--primary); border: none; border-radius: 50%; width: 50px; height: 50px; color: white; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3); font-size: 20px;">👥</button>
-    {% endif %}
+    <button id="toggle-sidebar" onclick="toggleSidebar()" style="position: fixed; bottom: 80px; right: 20px; z-index: 10001; background: #4f46e5; border: none; border-radius: 50%; width: 50px; height: 50px; color: white; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3); font-size: 20px;">👥</button>
 
+    <!-- Debug Panel (Hidden by default, shown by script if host) -->
+    <div id="ma-debug-panel" style="position: fixed; top: 10px; right: 10px; z-index: 10002; background: rgba(0,0,0,0.9); border: 1px solid #4f46e5; padding: 10px; border-radius: 8px; font-size: 11px; color: #fff; max-width: 200px; display: none;">
+        <div style="font-weight: 600; border-bottom: 1px solid #333; margin-bottom: 5px; color: #4ade80;">MA HOST DEBUG</div>
+        <div>Django Host: <span id="debug-is-host">...</span></div>
+        <div>Jitsi Room: <span id="debug-room-id">...</span></div>
+        <div>Jitsi Role: <span id="debug-jitsi-role">Searching...</span></div>
+        <button onclick="this.parentElement.style.display='none'" style="margin-top: 5px; background: #334155; border: none; color: white; cursor: pointer; border-radius: 3px; width: 100%;">Hide</button>
+    </div>
+
+    <!-- Host Identity Banner -->
+    <div style="position: fixed; top: 70px; left: 20px; z-index: 10003; font-size: 13px; font-weight: 600; color: #4ade80; background: rgba(15, 23, 42, 0.95); padding: 6px 12px; border-radius: 6px; border: 1px solid #22c55e; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+        <span style="margin-right: 5px;">✓</span> Host Recognized
+    </div>
+
+    <!-- Moderator Status Delay Alert -->
+    <div id="mod-status-alert" style="position: fixed; top: 120px; left: 20px; z-index: 10004; background: #ef4444; color: white; padding: 10px 15px; border-radius: 8px; font-size: 13px; font-weight: 600; box-shadow: 0 4px 12px rgba(0,0,0,0.5); display: none; max-width: 300px;">
+        ⚠️ Jitsi moderator power not granted. <br>
+        <span style="font-weight: 400; font-size: 11px;">Try refreshing or wait 10 seconds. On public servers, powers are sometimes delayed.</span>
+    </div>
+
+    <!-- Exit Modal (Highest Z-Index) -->
+    <div id="exit-modal-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.95); display: none; justify-content: center; align-items: center; z-index: 999999;">
+        <div class="modal-content" style="background: #1e293b; padding: 2.5rem; border-radius: 20px; text-align: center; border: 1px solid rgba(255,255,255,0.1); max-width: 400px; width: 90%; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
+            <h2 style="margin-top: 0; color: white; font-size: 1.5rem;">Exit Meeting</h2>
+            <p style="color: #94a3b8; margin-bottom: 2rem;">As host, how would you like to leave?</p>
+            <button onclick="confirmEndForAll()" class="modal-btn" style="background: #ef4444; color: white; width: 100%; padding: 15px; margin: 10px 0; border-radius: 12px; border: none; cursor: pointer; font-weight: 700; font-size: 1rem;">Leave All (End for Everyone)</button>
+            <button onclick="confirmLeaveAlone()" class="modal-btn" style="background: #4f46e5; color: white; width: 100%; padding: 15px; margin: 10px 0; border-radius: 12px; border: none; cursor: pointer; font-weight: 700; font-size: 1rem;">Leave Alone (Keep Active)</button>
+            <button onclick="toggleExitModal(false)" class="modal-btn" style="background: #334155; color: white; width: 100%; padding: 12px; margin: 15px 0 0 0; border-radius: 10px; border: none; cursor: pointer; font-weight: 600;">Cancel</button>
+        </div>
+    </div>
+    {% endif %}
     <div id="meet"></div>
 
     <div id="meet-loading-overlay">
@@ -104,79 +177,114 @@
     </div>
 
     <script>
-        /* ================= production configuration ================= */
-        const ROOM_NAME = "{{ room_name_slug }}";
-        const RAW_ROOM_NAME = "{{ room_name|escapejs }}";
-        const JITSI_DOMAIN = "{{ jitsi_domain|default:'meet.jit.si' }}";
-        const JWT_TOKEN = "{{ jwt_token|default:'' }}";
-        const USERNAME = "{{ username|escapejs }}";
-        const IS_HOST = {{ is_host|yesno:"true,false" }};
+        /* ================= 1. Configuration & Global State ================= */
+        const MA_IS_HOST = {{ is_host|yesno:"true,false" }};
+        const MA_ROOM_NAME = "{{ room_name|slugify }}";
+        const MA_RAW_ROOM_NAME = "{{ room_name|escapejs }}";
+        const MA_JITSI_ROOM_ID = "{{ room_id }}";
+        const MA_JITSI_DOMAIN = "{{ jitsi_domain|default:'meet.jit.si' }}";
+        const MA_JWT_TOKEN = "{{ jwt_token|default:'' }}";
+        const MA_USERNAME = "{{ username|escapejs }}";
+        
+        let MA_JITSI_API = null;
         const loadingOverlay = document.getElementById("meet-loading-overlay");
 
-        /* ================= api loader ================= */
+        console.log("[MA] Script Init. Host:", MA_IS_HOST, "Room:", MA_RAW_ROOM_NAME);
+
+        /* ================= 2. Core Navigation & Exit Functions ================= */
+        // Define these EARLY so buttons work immediately
+        window.toggleExitModal = function(show) {
+            const modal = document.getElementById('exit-modal-overlay');
+            if (modal) {
+                modal.style.display = show ? 'flex' : 'none';
+                console.log("[MA] Modal Toggle:", show);
+            } else {
+                console.error("[MA] Modal element not found!");
+            }
+        };
+
+        window.handleExit = function() {
+            console.log("[MA] handleExit triggered. IsHost:", MA_IS_HOST);
+            if (MA_IS_HOST) {
+                window.toggleExitModal(true);
+            } else {
+                window.location.href = "{% url 'index' %}";
+            }
+        };
+
+        window.confirmLeaveAlone = function() {
+            console.log("[MA] Confirm: Leave Alone");
+            window.location.href = "{% url 'index' %}";
+        };
+
+        window.confirmEndForAll = function() {
+            console.log("[MA] Confirm: End For All");
+            if (MA_JITSI_API) {
+                try {
+                    MA_JITSI_API.executeCommand('endConference');
+                } catch(e) { console.error("endConference failed:", e); }
+            }
+            setTimeout(() => {
+                window.location.href = "{% url 'end_meeting' room_name=room_name %}";
+            }, 800);
+        };
+
+        window.copyRoomName = function() {
+            navigator.clipboard.writeText(MA_RAW_ROOM_NAME).then(() => {
+                alert("Room Name copied: " + MA_RAW_ROOM_NAME);
+            });
+        };
+
+        /* ================= 3. Jitsi API Management ================= */
         function loadJitsiAPI(domain) {
             return new Promise((resolve, reject) => {
-                const scriptId = "jitsi-external-api";
                 if (window.JitsiMeetExternalAPI) return resolve();
-                if (document.getElementById(scriptId)) return resolve();
-                
                 const script = document.createElement("script");
-                script.id = scriptId;
+                script.id = "jitsi-external-api";
                 script.src = `https://${domain}/external_api.js`;
                 script.async = true;
                 script.onload = () => resolve();
-                script.onerror = () => reject(new Error("Failed to load Jitsi API"));
+                script.onerror = () => reject(new Error("Jitsi API Load Failed"));
                 document.head.appendChild(script);
             });
         }
 
-        /* ================= meeting orchestration ================= */
         async function initMeeting() {
-            if (window._jitsiInitiated) return;
-            window._jitsiInitiated = true;
+            if (window._maInitialized) return;
+            window._maInitialized = true;
 
             try {
-                await loadJitsiAPI(JITSI_DOMAIN);
+                await loadJitsiAPI(MA_JITSI_DOMAIN);
 
-                // --- Production Jitsi Options ---
                 const options = {
-                    roomName: ROOM_NAME,
+                    roomName: MA_JITSI_ROOM_ID,
                     width: "100%",
                     height: "100%",
                     parentNode: document.querySelector('#meet'),
-                    userInfo: { displayName: USERNAME },
+                    userInfo: { displayName: MA_USERNAME },
                     configOverwrite: {
                         prejoinPageEnabled: false,
-                        enableLobby: !IS_HOST, // CRITICAL: Only participants hit the lobby
+                        enableLobby: !MA_IS_HOST,
                         startWithAudioMuted: true,
                         startWithVideoMuted: true,
                         disableDeepLinking: true,
-                        
-                        /* ✅ PARTICIPANT FIREWALL & ROLE ENFORCEMENT */
                         remoteVideoMenu: {
-                            disableKick: !IS_HOST,
-                            disableGrantModerator: !IS_HOST,
-                            disableMute: !IS_HOST,
-                            disablePrivateChat: false
+                            disableKick: !MA_IS_HOST,
+                            disableGrantModerator: !MA_IS_HOST,
+                            disableMute: !MA_IS_HOST
                         },
-                        disableRemoteMute: !IS_HOST,
-                        hideLobbyButton: !IS_HOST,
+                        disableRemoteMute: !MA_IS_HOST,
+                        hideLobbyButton: !MA_IS_HOST,
                         doNotStoreRoom: true,
-                        
-                        // Feature restrictions for non-hosts
-                        recordingService: {
-                            enabled: IS_HOST,
-                            sharingEnabled: IS_HOST
-                        },
-                        liveStreamingEnabled: IS_HOST,
-                        autoCaption: false,
-                        
-                        // Disable sensitive settings for participants
-                        disableSettings: !IS_HOST,
-                        disableAdmins: !IS_HOST
+                        recordingService: { enabled: MA_IS_HOST, sharingEnabled: MA_IS_HOST },
+                        liveStreamingEnabled: MA_IS_HOST,
+                        disableSettings: !MA_IS_HOST,
+                        disableAdmins: !MA_IS_HOST,
+                        // Hardening: Request moderator powers explicitly
+                        moderation: { enabled: MA_IS_HOST },
                     },
                     interfaceConfigOverwrite: {
-                        TOOLBAR_BUTTONS: IS_HOST ? [
+                        TOOLBAR_BUTTONS: MA_IS_HOST ? [
                             'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
                             'fodeviceselection', 'hangup', 'profile', 'chat', 'recording',
                             'livestreaming', 'etherpad', 'sharedvideo', 'settings', 'raisehand',
@@ -186,110 +294,94 @@
                         ] : [
                             'microphone', 'camera', 'chat', 'raisehand', 'tileview', 'hangup',
                             'fullscreen', 'fodeviceselection'
-                        ],
-                        SETTINGS_SECTIONS: IS_HOST ? ['devices', 'language', 'moderator', 'profile', 'calendar'] : ['devices', 'language', 'profile']
+                        ]
                     }
                 };
 
-                // --- JWT Logic ---
-                // Only apply JWT if we aren't using a public/community community server
-                const isOpenCommunity = ["meet.jit.si", "meet.ffmuc.net"].includes(JITSI_DOMAIN);
-                
-                if (!isOpenCommunity && JWT_TOKEN) {
-                    options.jwt = JWT_TOKEN;
-                    console.log("[Production] Private JWT Applied");
-                } else {
-                    console.log("[Production] Using Community Moderator Rules (First In = Moderator)");
+                if (!["meet.jit.si", "meet.ffmuc.net"].includes(MA_JITSI_DOMAIN) && MA_JWT_TOKEN) {
+                    options.jwt = MA_JWT_TOKEN;
                 }
 
-                const joinDelay = IS_HOST ? 0 : 1500;
+                MA_JITSI_API = new JitsiMeetExternalAPI(MA_JITSI_DOMAIN, options);
 
-                setTimeout(() => {
-                    const api = new JitsiMeetExternalAPI(JITSI_DOMAIN, options);
-
-                    let revealed = false;
-                    const revealUI = (source) => {
-                        if (revealed) return;
-                        revealed = true;
-                        loadingOverlay.style.display = "none";
-                        console.log(`[Jitsi] UI Reveal: ${source}`);
-                    };
-
-                    // ✅ CRITICAL: Reveal instantly for host so they aren't stuck behind our loader
-                    if (IS_HOST) {
-                        setTimeout(() => revealUI("host-instant-reveal"), 500);
+                // --- UI Reveal & Debug ---
+                const reveal = () => { loadingOverlay.style.display = "none"; };
+                if (MA_IS_HOST) {
+                    setTimeout(reveal, 1000);
+                    const debugPanel = document.getElementById('ma-debug-panel');
+                    if (debugPanel) {
+                        debugPanel.style.display = 'block';
+                        document.getElementById('debug-is-host').innerText = "YES";
+                        document.getElementById('debug-room-id').innerText = MA_JITSI_ROOM_ID.substring(0,8);
                     }
+                }
 
-                    api.addEventListener("videoConferenceJoined", () => {
-                        revealUI("conferenceJoined");
+                // --- Jitsi Events ---
+                MA_JITSI_API.addEventListener("videoConferenceJoined", () => {
+                    reveal();
+                    if (MA_IS_HOST) {
+                        try { MA_JITSI_API.executeCommand('toggleLobby', false); } catch(e) {}
+                    }
+                });
+
+                MA_JITSI_API.addEventListener("moderatorStatusChanged", (e) => {
+                    console.log("[Jitsi] Moderator Status Changed:", e.isModerator);
+                    if (MA_IS_HOST) {
+                        const roleSpan = document.getElementById('debug-jitsi-role');
+                        if (roleSpan) {
+                            roleSpan.innerText = e.isModerator ? "MODERATOR" : "GUEST";
+                            roleSpan.style.color = e.isModerator ? "#4ade80" : "#ef4444";
+                        }
                         
-                        if (IS_HOST) {
-                            console.log("[Jitsi] Host joined successfully.");
-                            try {
-                                api.executeCommand('toggleLobby', false);
-                            } catch(e) {}
+                        const alertBanner = document.getElementById('mod-status-alert');
+                        if (!e.isModerator) {
+                            if (alertBanner) alertBanner.style.display = 'block';
+                            console.warn("Public Jitsi Moderator issue detected. Host joined as Guest.");
+                        } else {
+                            if (alertBanner) alertBanner.style.display = 'none';
                         }
-                    });
-
-                    // Handle "Waiting for moderator" on public Jitsi
-                    api.addEventListener("moderatorStatusChanged", (e) => {
-                        if (IS_HOST && !e.isModerator) {
-                            console.warn("Public Jitsi detected. If you see 'Asking to join', please use the Jitsi 'Log-in' button to authenticate as a moderator.");
-                        }
-                    });
-
-                    api.addEventListener("connectionEstablished", () => revealUI("connectionEstablished"));
-                    api.addEventListener("participantJoined", () => revealUI("participantJoined"));
-
-                    // Safety Fallback (10s)
-                    setTimeout(() => revealUI("safety-fallback"), 10000);
-
-                    if (IS_HOST) {
-                        api.addEventListener("videoConferenceLeft", () => {
-                            window.location.href = "{% url 'index' %}";
-                        });
                     }
+                });
 
-                }, joinDelay);
+                MA_JITSI_API.addEventListener("readyToClose", () => {
+                    console.log("[MA] Jitsi Hangup Triggered");
+                    if (MA_IS_HOST) {
+                        window.handleExit();
+                    } else {
+                        window.location.href = "{% url 'index' %}";
+                    }
+                });
+
+                MA_JITSI_API.on("connectionEstablished", reveal);
+                setTimeout(reveal, 15000); // Safety fallback
 
             } catch (err) {
-                console.error("[Fatal] Jitsi bootstrap failed:", err);
-                document.getElementById("loading-status").innerText = "❌ Connection failed. Please try again.";
+                console.error("[MA] Bootstrap Fail:", err);
+                document.getElementById("loading-status").innerText = "❌ Fail: " + err.message;
             }
         }
 
         document.addEventListener("DOMContentLoaded", initMeeting);
 
-        function copyRoomName() {
-            navigator.clipboard.writeText(RAW_ROOM_NAME).then(() => {
-                console.log("[Jitsi] Copied Room Name:", RAW_ROOM_NAME);
-                alert("Room Name (Join Code) copied to clipboard: " + RAW_ROOM_NAME);
-            });
-        }
-
-        /* ✅ HOST APPROVAL GATE LOGIC */
-        if (IS_HOST) {
+        /* ================= 4. Host Sidebar Logic ================= */
+        if (MA_IS_HOST) {
             window.toggleSidebar = function() {
                 const sb = document.getElementById('request-sidebar');
-                sb.style.display = sb.style.display === 'none' ? 'block' : 'none';
+                if (sb) sb.style.display = sb.style.display === 'none' ? 'block' : 'none';
             };
 
             window.respond = async function(requestId, status) {
-                console.log(`[Jitsi] Responding to request ${requestId} with ${status}`);
                 try {
-                    const response = await fetch(`{% url 'respond_request' room_name=room_name %}`, {
+                    await fetch(`{% url 'respond_request' room_name=room_name %}`, {
                         method: 'POST',
                         body: JSON.stringify({ request_id: requestId, status: status }),
-                        headers: { 'Content-Type': 'application/json' }
+                        headers: { 
+                            'Content-Type': 'application/json', 
+                            'X-CSRFToken': '{{ csrf_token }}' 
+                        }
                     });
-                    if (response.ok) {
-                        pollRequests();
-                    } else {
-                        console.error("[Jitsi] Response failed", await response.text());
-                    }
-                } catch(e) {
-                    console.error("[Jitsi] Error responding to request:", e);
-                }
+                    pollRequests();
+                } catch(e) { console.error("Respond fail:", e); }
             };
 
             async function pollRequests() {
@@ -297,36 +389,51 @@
                     const response = await fetch(`{% url 'manage_requests' room_name=room_name %}`);
                     const data = await response.json();
                     const list = document.getElementById('request-list');
-                    
-                    if (data.requests.length === 0) {
-                        list.innerHTML = '<p style="color: #94a3b8; text-align: center;">No pending requests</p>';
-                    } else {
-                        list.innerHTML = '';
-                        data.requests.forEach(req => {
-                            const div = document.createElement('div');
-                            div.className = 'request-item';
-                            div.style = 'background: rgba(255,255,255,0.05); padding: 15px; border-radius: 12px; margin-bottom: 10px; border: 1px solid rgba(255,255,255,0.1);';
-                            div.innerHTML = `
-                                <div style="font-weight: 600; margin-bottom: 5px;">${req.username}</div>
-                                <div style="display: flex; gap: 8px;">
-                                    <button onclick="window.respond('${req.id}', 'APPROVED')" style="flex: 1; background: #22c55e; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">Accept</button>
-                                    <button onclick="window.respond('${req.id}', 'DENIED')" style="flex: 1; background: #ef4444; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">Deny</button>
-                                </div>
-                            `;
-                            list.appendChild(div);
-                        });
-                        // Auto-show sidebar if there are new requests
-                        const sb = document.getElementById('request-sidebar');
-                        if (sb.style.display === 'none') sb.style.display = 'block';
+                    if (list) {
+                        if (data.requests.length === 0) {
+                            list.innerHTML = '<p style="color: #94a3b8; text-align: center; font-size: 13px;">No pending requests</p>';
+                        } else {
+                            list.innerHTML = '';
+                            data.requests.forEach(req => {
+                                const div = document.createElement('div');
+                                div.style = 'background: rgba(255,255,255,0.05); padding: 15px; border-radius: 12px; margin-bottom: 10px; border: 1px solid rgba(255,255,255,0.1);';
+                                div.innerHTML = `
+                                    <div style="font-weight: 600; margin-bottom: 8px; color: white;">${req.username}</div>
+                                    <div style="display: flex; gap: 8px;">
+                                        <button onclick="window.respond('${req.id}', 'APPROVED')" style="flex: 1; background: #22c55e; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">Accept</button>
+                                        <button onclick="window.respond('${req.id}', 'DENIED')" style="flex: 1; background: #ef4444; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">Deny</button>
+                                    </div>
+                                `;
+                                list.appendChild(div);
+                            });
+                            const sb = document.getElementById('request-sidebar');
+                            if (sb && sb.style.display === 'none') sb.style.display = 'block';
+                        }
                     }
-                } catch(e) {
-                    console.error("[Jitsi] Polling error:", e);
-                }
+                } catch(e) { /* silent poll fail */ }
                 setTimeout(pollRequests, 5000);
             }
-
             pollRequests();
         }
+
+        /* ================= 5. Meeting Watchdog ================= */
+        // Everyone polls this to see if the host has ended the meeting
+        async function pollMeetingStatus() {
+            try {
+                const response = await fetch(`{% url 'check_request_status' room_name=room_name %}`);
+                const data = await response.json();
+                
+                if (data.is_active === false) {
+                    console.log("[MA] Meeting de-activated by host. Exiting...");
+                    window.location.href = "{% url 'index' %}?msg=MeetingEnded";
+                    return;
+                }
+            } catch(e) { console.warn("[MA] Status check failed:", e); }
+            setTimeout(pollMeetingStatus, 6000);
+        }
+        
+        // Start watchdog immediately
+        pollMeetingStatus();
     </script>
 </body>
 

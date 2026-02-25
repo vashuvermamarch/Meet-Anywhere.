@@ -43,8 +43,8 @@ def create_meeting(request):
         if not room_name:
             room_name = str(uuid.uuid4())[:8]
         
-        # Check if room already exists
-        existing_meeting = Meeting.objects.filter(room_name=room_name).first()
+        # Check if room already exists (Case-Insensitive)
+        existing_meeting = Meeting.objects.filter(room_name__iexact=room_name).first()
         
         if existing_meeting:
             if existing_meeting.host == request.user:
@@ -75,10 +75,14 @@ def meeting(request, room_name):
     Production-quality Jitsi join view.
     Ensures roles are strictly detected and authorized before joining.
     """
-    meeting = get_object_or_404(Meeting, room_name=room_name, is_active=True)
+    room_name = room_name.lower().strip()
+    meeting = Meeting.objects.filter(room_name=room_name, is_active=True).first()
+    if not meeting:
+        from django.http import Http404
+        raise Http404("No Meeting matches the given query.")
     
     # Permission logic
-    is_host = (meeting.host == request.user)
+    is_host = (meeting.host_id == request.user.id)
     is_authorized = meeting.is_public or is_host or meeting.authorized_participants.filter(id=request.user.id).exists()
     
     if not is_authorized:
@@ -102,6 +106,7 @@ def meeting(request, room_name):
 
     return render(request, 'meetings/meeting.html', {
         'room_name': room_name,
+        'room_id': meeting.room_id,
         'room_name_slug': normalized_room,
         'jitsi_domain': jitsi_domain,
         'jwt_token': jwt_token,
@@ -113,6 +118,7 @@ def end_meeting(request, room_name):
     """
     Host ends the meeting permanently.
     """
+    room_name = room_name.lower().strip()
     meeting = get_object_or_404(Meeting, room_name=room_name)
     if meeting.host == request.user:
         meeting.is_active = False
@@ -123,6 +129,7 @@ def waiting_room(request, room_name):
     """
     Participant waits here for host approval.
     """
+    room_name = room_name.lower().strip()
     meeting = get_object_or_404(Meeting, room_name=room_name)
     join_request, created = JoinRequest.objects.get_or_create(meeting=meeting, user=request.user)
     
@@ -137,18 +144,28 @@ def waiting_room(request, room_name):
 @login_required
 def check_request_status(request, room_name):
     """
-    AJAX endpoint for participants to poll their status.
+    AJAX endpoint for participants to poll their status and meeting activity.
     """
-    join_request = JoinRequest.objects.filter(meeting__room_name=room_name, user=request.user).first()
-    if not join_request:
-        return JsonResponse({'status': 'NONE'})
-    return JsonResponse({'status': join_request.status})
+    room_name = room_name.lower().strip()
+    meeting = Meeting.objects.filter(room_name=room_name).first()
+    
+    if not meeting:
+        return JsonResponse({'status': 'NONE', 'is_active': False})
+    
+    join_request = JoinRequest.objects.filter(meeting=meeting, user=request.user).first()
+    status = join_request.status if join_request else 'NONE'
+    
+    return JsonResponse({
+        'status': status,
+        'is_active': meeting.is_active
+    })
 
 @login_required
 def manage_requests(request, room_name):
     """
     Host view to see and manage pending requests (AJAX).
     """
+    room_name = room_name.lower().strip()
     meeting = get_object_or_404(Meeting, room_name=room_name)
     if meeting.host != request.user:
         return JsonResponse({'error': 'Unauthorized'}, status=403)
@@ -166,6 +183,7 @@ def respond_to_request(request, room_name):
     if request.method != 'POST':
         return JsonResponse({'error': 'Invalid method'}, status=405)
         
+    room_name = room_name.lower().strip()
     meeting = get_object_or_404(Meeting, room_name=room_name)
     if meeting.host != request.user:
         return JsonResponse({'error': 'Unauthorized'}, status=403)

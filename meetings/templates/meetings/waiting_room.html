@@ -52,7 +52,7 @@
 
     <script>
         const ROOM_NAME = "{{ room_name|escapejs }}";
-        const statusUrl = `{% url 'check_status' room_name=room_name %}`;
+        const statusUrl = `{% url 'check_request_status' room_name=room_name %}`;
         const meetingUrl = `{% url 'meeting' room_name=room_name %}`;
 
         async function pollStatus() {
